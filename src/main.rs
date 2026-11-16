@@ -1,3 +1,5 @@
+mod queries;
+
 use std::env;
 use std::io;
 use std::path::PathBuf;
@@ -44,7 +46,7 @@ fn main() {
     };
 
     let (input_provider, input) = input_parser(command.trim());
-    println!("input provider: {:?}", input_provider);
+    println!("input provider: {:?}. input: {}", input_provider, input);
 
     match input_provider {
         InputProvider::Web => web_search(&input),
@@ -52,11 +54,11 @@ fn main() {
         InputProvider::ProgramSearch => program_search(&input),
         InputProvider::FileSearch => file_search(&input),
         InputProvider::Ai => ai_prompt(&input),
-        InputProvider::Calculator => calculator_query(&input),
+        InputProvider::Calculator => queries::calculator_query::calculator_query(&input),
     }
 }
 
-fn get_search_locations(input: &str) -> Vec<PathBuf> {
+fn get_search_locations() -> Vec<PathBuf> {
     // Get bitmask of available drives
     // Each bit cooresponds to drive letter
     let drive_mask = unsafe {
@@ -83,17 +85,25 @@ fn get_search_locations(input: &str) -> Vec<PathBuf> {
 // Open web
 fn web_search(input: &str) {
     // Check if input is url
-    // TODO: FINISH REGEX
-    let url_regex = Regex::new(r"$").unwrap();
+    // This should work for most valid urls
+    let url_regex = Regex::new(r"^(https?:\/\/)?(www\.)?.+\..+$").unwrap();
     if url_regex.is_match(input) {
-        if webbrowser::open(input).is_err() {
-            todo!("handle error")
-        }
-    }
+        // If doesn't start with https:// or http://, we need to add it
+        // to make sure web browser opens website instead of thinking it is file
+        let url = &if input.starts_with("http://") || input.starts_with("https://") {
+            input.to_string()
+        } else {
+            format!("https://{input}")
+        };
 
-    // Input not url so default to search with search engine
-    if webbrowser::open(&format!("https://duckduckgo.com/?q={}", input)).is_err() {
-        todo!("handle error")
+        if webbrowser::open(url).is_err() {
+            panic!("Unable to open web browser!")
+        }
+    } else {
+        // Input not url so default to search with search engine
+        if webbrowser::open(&format!("https://duckduckgo.com/?q={input}")).is_err() {
+            panic!("Unable to open web browser!")
+        }
     }
 }
 
@@ -104,13 +114,14 @@ fn wiki_search(input: &str) {
 }
 
 fn program_search(input: &str) {
+    println!("")
 }
 
 // Todo: maybe be able to use regex to search files?
 // can prob implement this for the program search as well
 fn file_search(input: &str) {
     println!("Searching for: {input}");
-    let search_locations = get_search_locations(input);
+    let search_locations = get_search_locations();
 
     // Debug print search locations
     for location in &search_locations {
@@ -144,13 +155,8 @@ fn file_search(input: &str) {
         println!("{path}");
     }
 }
-
 fn ai_prompt(input: &str) {
-    todo!("")
-}
-
-fn calculator_query(input: &str) {
-    todo!("")
+    // TODO: IMPLEMENT
 }
 
 fn get_keyword(input_provider: InputProvider) -> Vec<String> {
