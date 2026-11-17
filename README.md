@@ -1,5 +1,5 @@
 # Launcher
-This is a simple command-line Launcher Application created in Rust. It supports features like web search, searching files, and more.
+This is a simple command-line Launcher Application created in Rust. It supports features like web search, searching files, and more. I made this because I wanted a light-weight alternative to things like the windows search that I feel are very bloated and just don't have that many good features.
 
 # Running
 Navigate to the releases tab in Github and download and run the executable file. Note: you need a windows machine to run the attached executable file and for search to work properly in the application. You can run the application with a different Operating System by cloning the project and compiling it with `cargo run`.
