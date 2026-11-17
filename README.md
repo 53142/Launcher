@@ -10,3 +10,5 @@ The launcher supports querying wikipedia with `!wiki` prepended, finding files o
 
 If the launcher is not invoked without an query, it will ask the user for an input.
 ![Output if invoked without arguments](image.png)
+
+![Example for searching for files](image-1.png)
