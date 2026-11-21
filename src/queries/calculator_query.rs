@@ -1,13 +1,14 @@
 // Simple calculator implementation
-pub fn calculator_query(input: &str) {
-    match tokenize(input).and_then(infix_to_postfix) {
-        Ok(postfix) => {
-          println!("Postfix: {}", postfix.join(" "));
-        }
-        Err(error) => {
-            println!("Error: {error}");
-        }
-    }
+pub fn calculator_query(input: &str) -> Option<f32> {
+    let Ok(postfix) = tokenize(input).and_then(infix_to_postfix)
+    else {
+        return None
+    };
+    // println!("Postfix: {}", postfix.join(" "));
+
+    let result = evaluate_postfix(postfix)?;
+    // println!("Result: {result}");
+    Some(result)
 }
 
 // Convert input string into tokens of digits and operators
@@ -15,6 +16,7 @@ fn tokenize(input: &str) -> Result<Vec<&str>, &'static str> {
     let mut tokens = Vec::new();
     let mut chars = input.char_indices().peekable();
 
+    // For each char
     while let Some((start, ch)) = chars.next() {
         // Ignore whitespace
         if ch.is_whitespace() {
@@ -133,4 +135,29 @@ fn infix_to_postfix(tokens: Vec<&str>) -> Result<Vec<&str>, &str> {
     }
 
     Ok(output)
+}
+
+fn evaluate_postfix(postfix: Vec<&str>) -> Option<f32> {
+    let mut stack: Vec<f32> = Vec::new();
+
+    for token in postfix {
+        // Token is number
+        if let Ok(num) = token.parse::<f32>() {
+            stack.push(num);
+        } else { // operator
+            let b = stack.pop()?;
+            let a = stack.pop()?;
+
+            stack.push(match token {
+                "+" => a + b,
+                "-" => a - b,
+                "*" => a * b,
+                "/" => a / b,
+                "^" => a.powf(b),
+                _ => return None,
+            });
+        }
+    }
+
+    stack.pop()
 }

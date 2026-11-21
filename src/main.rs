@@ -10,8 +10,9 @@ use rust_search::similarity_sort;
 use windows_sys::Win32::Storage::FileSystem::GetLogicalDrives;
 
 // TODO: Maybe make a settings input like '!s' maybe have ability to search through settings?
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum InputProvider {
+    None,
     Wikipedia,
     FileSearch,
     ProgramSearch,
@@ -46,7 +47,7 @@ fn main() {
     };
 
     let (input_provider, input) = input_parser(command.trim());
-    println!("input provider: {:?}. input: {}", input_provider, input);
+    // println!("input provider: {:?}; input: {}", input_provider, input);
 
     match input_provider {
         InputProvider::Web => web_search(&input),
@@ -54,11 +55,19 @@ fn main() {
         InputProvider::ProgramSearch => program_search(&input),
         InputProvider::FileSearch => file_search(&input),
         InputProvider::Ai => ai_prompt(&input),
-        InputProvider::Calculator => queries::calculator_query::calculator_query(&input),
+        InputProvider::Calculator => println!("{}", queries::calculator_query::calculator_query(&input).expect("Invalid input")),
+        InputProvider::None => { // User didn't specify keyword
+            // Try processing query as calculator input first
+            if let Some(result) = queries::calculator_query::calculator_query(&input) {
+                println!("{}", result);
+            } else {
+                web_search(&input)
+            }
+        }
     }
 }
 
-fn get_search_locations() -> Vec<PathBuf> {
+fn get_drive_search_locations() -> Vec<PathBuf> {
     // Get bitmask of available drives
     // Each bit cooresponds to drive letter
     let drive_mask = unsafe {
@@ -121,27 +130,40 @@ fn program_search(input: &str) {
 // can prob implement this for the program search as well
 fn file_search(input: &str) {
     println!("Searching for: {input}");
-    let search_locations = get_search_locations();
+    let drive_search_locations = get_drive_search_locations();
+    if drive_search_locations.is_empty() {
+        eprintln!("No search locations available.");
+        return;
+    }
 
     // Debug print search locations
-    for location in &search_locations {
-        println!("Location: {}", location.display());
+    print!("Looking in: ");
+    for location in &drive_search_locations {
+        print!("{} ", location.display());
     }
+    println!();
 
     // Configure search
-    let extra_locations: Vec<PathBuf> = search_locations.iter().skip(1).cloned().collect();
+    let mut extra_locations: Vec<PathBuf> = drive_search_locations;
+
+    // Common search locations are checked first to give results faster
+    let default_search_locations: Vec<PathBuf> = vec![
+        PathBuf::from("%USERPROFILE%"), // user folder
+        PathBuf::from("%ProgramFiles(x86)%"),
+        PathBuf::from("%Public%"),
+    ];
+
+    extra_locations.push(default_search_locations.iter().skip(1).collect());
 
     let mut builder = SearchBuilder::default()
-        .location(&search_locations[0])
+        .location(&default_search_locations[0])
         .search_input(input)
         .ignore_case();
-
-    if !extra_locations.is_empty() {
-        builder = builder.more_locations(extra_locations);
-    }
+    builder = builder.more_locations(extra_locations);
 
     // Collect results
     let mut results: Vec<String> = builder
+        .limit(50)
         .build()
         .collect();
 
@@ -151,7 +173,7 @@ fn file_search(input: &str) {
     println!("Found {} results", results.len());
 
     // Only show first 10 results
-    for path in &results[..10] {
+    for path in results.iter() {
         println!("{path}");
     }
 }
@@ -167,6 +189,7 @@ fn get_keyword(input_provider: InputProvider) -> Vec<String> {
         InputProvider::Web => vec!["!web".to_string(), "!w".to_string()],
         InputProvider::Ai => vec!["!ai".to_string(), "!a".to_string()],
         InputProvider::Calculator => vec!["!c".to_string()],
+        InputProvider::None => panic!("Attempted to get keyword for None InputProvider")
     }
 }
 
@@ -186,5 +209,5 @@ fn input_parser(input: &str) -> (InputProvider, String) {
     }
     // TODO: prob try to run all of the searches if not keywords match
     // maybe except if it is math or something
-    (InputProvider::Web, input.to_string())
+    (InputProvider::None, input.to_string())
 }
