@@ -1,12 +1,14 @@
 mod queries;
 
+use std::collections::HashSet;
 use std::env;
 use std::io;
+use std::io::Write;
+use std::path::Path;
 use std::path::PathBuf;
 
 use regex::Regex;
 use rust_search::SearchBuilder;
-use rust_search::similarity_sort;
 use windows_sys::Win32::Storage::FileSystem::GetLogicalDrives;
 
 // TODO: Maybe make a settings input like '!s' maybe have ability to search through settings?
@@ -67,9 +69,33 @@ fn main() {
     }
 }
 
+// Return common directories to search first
+fn get_common_search_locations() -> Vec<PathBuf> {
+    let Some(user_profile) = env::var_os("USERPROFILE") else {
+        eprintln!("Unable to locate user profile.");
+        return Vec::new();
+    };
+
+    let user_profile = PathBuf::from(user_profile);
+
+    let directories = [
+        "Desktop",
+        "Downloads",
+        "Documents",
+        "Pictures",
+        "Videos",
+        "Music",
+    ];
+
+    directories
+        .iter()
+        .map(|dir| user_profile.join(dir))
+        .filter(|path| path.is_dir())
+        .collect()
+}
+
+// Return all available drives to search after common search locations to ensure all results are searched
 fn get_drive_search_locations() -> Vec<PathBuf> {
-    // Get bitmask of available drives
-    // Each bit cooresponds to drive letter
     let drive_mask = unsafe {
         GetLogicalDrives()
     };
@@ -80,15 +106,70 @@ fn get_drive_search_locations() -> Vec<PathBuf> {
     }
 
     let mut locations = Vec::new();
+
     for bit in 0u32..26 {
         if drive_mask & (1u32 << bit) != 0 {
             let letter = (b'A' + bit as u8) as char;
-            // Add device letter with :\ thingy
+
             locations.push(PathBuf::from(format!("{letter}:\\")));
         }
     }
 
     locations
+}
+
+// Reusable search function
+fn search_location(
+    location: &Path,
+    input: &str,
+    depth: Option<usize>,
+    include_hidden: bool,
+    seen: &mut HashSet<String>,
+    total_results: &mut usize,
+    max_results: usize,
+) -> bool {
+    // println!("\nSearching: {}", location.display());
+    let _ = io::stdout().flush();
+
+    let mut builder = SearchBuilder::default()
+        .location(location)
+        .search_input(input)
+        .ignore_case();
+
+    // Apply depth limit if specified
+    if let Some(depth) = depth {
+        builder = builder.depth(depth);
+    }
+
+    // Include hidden files and directories when requested
+    if include_hidden {
+        builder = builder.hidden();
+    }
+
+    // Search results arrive through the iterator
+    for path in builder.build() {
+        // Windows paths are normally case-insensitive
+        let key = path.to_lowercase();
+
+        // Skip duplicate results
+        if !seen.insert(key) {
+            continue;
+        }
+
+        *total_results += 1;
+
+        println!("{total_results}. {path}");
+
+        // Flush output to immediately display result
+        let _ = io::stdout().flush();
+
+        // Stop when the global result limit is reached
+        if *total_results >= max_results {
+            return false;
+        }
+    }
+
+    true
 }
 
 // Open web
@@ -129,54 +210,76 @@ fn program_search(input: &str) {
 // Todo: maybe be able to use regex to search files?
 // can prob implement this for the program search as well
 fn file_search(input: &str) {
+    const MAX_RESULTS: usize = 100;
+    const COMMON_SEARCH_DEPTH: usize = 6;
+
+    let input = input.trim();
+
+    if input.is_empty() {
+        eprintln!("Please enter a search query.");
+        return;
+    }
+
+    let start = std::time::Instant::now();
+
     println!("Searching for: {input}");
-    let drive_search_locations = get_drive_search_locations();
-    if drive_search_locations.is_empty() {
+
+    let common_locations = get_common_search_locations();
+    let drive_locations = get_drive_search_locations();
+
+    if common_locations.is_empty() && drive_locations.is_empty() {
         eprintln!("No search locations available.");
         return;
     }
 
-    // Debug print search locations
-    print!("Looking in: ");
-    for location in &drive_search_locations {
-        print!("{} ", location.display());
+    let mut total_results = 0;
+    let mut seen = HashSet::new();
+
+    // First search common user dirs with a lower depth
+    for location in &common_locations {
+        let should_continue = search_location(
+            location,
+            input,
+            Some(COMMON_SEARCH_DEPTH),
+            false,
+            &mut seen,
+            &mut total_results,
+            MAX_RESULTS,
+        );
+
+        if !should_continue {
+            break;
+        }
     }
-    println!();
 
-    // Configure search
-    let mut extra_locations: Vec<PathBuf> = drive_search_locations;
+    // Completely search all drives next
+    if total_results < MAX_RESULTS {
+        for location in &drive_locations {
+            let should_continue = search_location(
+                location,
+                input,
+                None, // No depth limit
+                true, // Include hidden files
+                &mut seen,
+                &mut total_results,
+                MAX_RESULTS,
+            );
 
-    // Common search locations are checked first to give results faster
-    let default_search_locations: Vec<PathBuf> = vec![
-        PathBuf::from("%USERPROFILE%"), // user folder
-        PathBuf::from("%ProgramFiles(x86)%"),
-        PathBuf::from("%Public%"),
-    ];
-
-    extra_locations.push(default_search_locations.iter().skip(1).collect());
-
-    let mut builder = SearchBuilder::default()
-        .location(&default_search_locations[0])
-        .search_input(input)
-        .ignore_case();
-    builder = builder.more_locations(extra_locations);
-
-    // Collect results
-    let mut results: Vec<String> = builder
-        .limit(50)
-        .build()
-        .collect();
-
-    // Sort by similarity
-    similarity_sort(&mut results, input);
-
-    println!("Found {} results", results.len());
-
-    // Only show first 10 results
-    for path in results.iter() {
-        println!("{path}");
+            if !should_continue {
+                break;
+            }
+        }
     }
+
+    println!("\nSearch Complete");
+    if total_results != 0 {
+        println!("Found {total_results} (or more) unique results.");
+    } else {
+        println!("Found no results.");
+    }
+    println!("Elapsed time: {:.2?}", start.elapsed());
 }
+
 fn ai_prompt(input: &str) {
     // TODO: IMPLEMENT
 }
