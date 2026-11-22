@@ -370,6 +370,7 @@ version = "0.1.0"
 dependencies = [
  "regex",
  "rust_search",
+ "walkdir",
  "webbrowser",
  "windows-sys",
 ]
