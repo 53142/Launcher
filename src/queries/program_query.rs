@@ -3,7 +3,12 @@ use std::{collections::HashSet, env, fs, io::{self, Write}, os::windows::ffi::Os
 use walkdir::WalkDir;
 use windows_sys::Win32::UI::Shell::ShellExecuteW;
 
-use crate::Program;
+// For storing program name and path
+#[derive(Debug, Clone)]
+struct Program {
+    name: String,
+    path: PathBuf,
+}
 
 fn get_start_menu_file_locations() -> Vec<PathBuf> {
     let mut locations = Vec::new();

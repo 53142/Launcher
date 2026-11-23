@@ -2,10 +2,8 @@ mod queries;
 
 use std::env;
 use std::io;
-use std::path::PathBuf;
 
-// TODO: Maybe make a settings input like '!s' maybe have ability to search through settings?
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum InputProvider {
     None,
     Wikipedia,
@@ -23,13 +21,17 @@ impl InputProvider {
         InputProvider::Web,
         InputProvider::Calculator,
     ];
-}
 
-// For storing program name and path
-#[derive(Debug, Clone)]
-struct Program {
-    name: String,
-    path: PathBuf,
+    fn get_keywords(self) -> &'static [&'static str] {
+        match self {
+            InputProvider::Wikipedia => &["!wiki"],
+            InputProvider::FileSearch => &["file", "!f"],
+            InputProvider::ProgramSearch => &["!p"],
+            InputProvider::Web => &["!w", "!web"],
+            InputProvider::Calculator => &["!c"],
+            InputProvider::None => &[],
+        }
+    }
 }
 
 fn main() {
@@ -42,30 +44,57 @@ fn main() {
         return;
     }
 
-    let command = if args.len() == 0 {
+    // Handle version
+    if matches!(args.first().map(String::as_str), Some("--version" | "-v")) {
+        println!("Launcher v{}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
+
+    let command = if args.is_empty() {
         println!("Enter an input: ");
         // read user input etc
         let mut user_input = String::new();
-        io::stdin().read_line(&mut user_input).expect("Unable to read user input!");
+        if let Err(error) = io::stdin().read_line(&mut user_input) {
+            eprintln!("Failed to read input: {error}");
+            return;
+        }
         user_input
     } else {
         args.join(" ")
     };
 
-    let (input_provider, input) = input_parser(command.trim());
+    let command = command.trim();
 
-    match input_provider {
-        InputProvider::Web => queries::web_query::web_search(&input),
-        InputProvider::Wikipedia => queries::wiki_query::wiki_search(&input),
-        InputProvider::ProgramSearch => queries::program_query::program_search(&input),
-        InputProvider::FileSearch => queries::file_query::file_search(&input),
-        InputProvider::Calculator => println!("{}", queries::calculator_query::calculator_query(&input).expect("Invalid input")),
+    if command.is_empty() {
+        eprintln!("No input provided.");
+        return;
+    }
+
+    // Parse input
+    let (provider, input) = input_parser(command);
+
+    // Execute query
+    execute_query(provider, input);
+}
+
+fn execute_query(provider: InputProvider, input: &str) {
+    match provider {
+        InputProvider::Web => queries::web_query::web_search(input),
+        InputProvider::Wikipedia => queries::wiki_query::wiki_search(input),
+        InputProvider::ProgramSearch => queries::program_query::program_search(input),
+        InputProvider::FileSearch => queries::file_query::file_search(input),
+        InputProvider::Calculator => {
+            match queries::calculator_query::calculator_query(input) {
+                Some(result) => println!("{result}"),
+                None => eprintln!("Invalid mathematical expression."),
+            }
+        }
         InputProvider::None => { // User didn't specify keyword
             // Try processing query as calculator input first
-            if let Some(result) = queries::calculator_query::calculator_query(&input) {
-                println!("{}", result);
+            if let Some(result) = queries::calculator_query::calculator_query(input) {
+                println!("{result}");
             } else { // If can't process as calculator query, default to web search
-                queries::web_query::web_search(&input)
+                queries::web_query::web_search(input)
             }
         }
     }
@@ -75,12 +104,15 @@ fn main() {
 fn print_help() {
     println!(
         r#"
+Launcher version: {}
+
 Usage:
     launcher.exe [QUERY]
     launcher.exe [KEYWORD] [QUERY]
 
 Options:
     -h, --help          Display this help message
+    -v, --version       Display application version
 
 Keywords:
     !web, !w                    Search in Google or navigate to website (if url specified)
@@ -101,35 +133,26 @@ Examples:
 
 If no keyword is specified, the application attempts to evaluate the expression as a calculator input.
 If that fails, it searches the input on the web.
-"#
+"#, env!("CARGO_PKG_VERSION")
     );
 }
 
-fn get_keyword(input_provider: InputProvider) -> Vec<String> {
-    match input_provider {
-        InputProvider::Wikipedia => vec!["!wiki".to_string()],
-        InputProvider::ProgramSearch => vec!["!p".to_string()],
-        InputProvider::FileSearch => vec!["!file".to_string(), "!f".to_string()],
-        InputProvider::Web => vec!["!web".to_string(), "!w".to_string()],
-        InputProvider::Calculator => vec!["!c".to_string()],
-        InputProvider::None => panic!("Attempted to get keyword for no input provider?")
-    }
-}
+fn input_parser(input: &str) -> (InputProvider, &str) {
+    let input = input.trim();
 
-fn input_parser(input: &str) -> (InputProvider, String) {
     // Find and remove leading white space characters
     let split_pos = input
         .find(char::is_whitespace)
         .unwrap_or(input.len());
+
     let (prefix, rest) = input.split_at(split_pos);
 
     // First check keywords
     // They allow the user to force the launcher to interpret the query as a specific evaluation
     for input_provider in InputProvider::VARIANTS {
-        let keywords = get_keyword(input_provider);
-        if keywords.iter().any(|keyword| keyword.as_str() == prefix) {
-            return (input_provider, rest.trim().to_string());
+        if input_provider.get_keywords().contains(&prefix) {
+            return (input_provider, rest.trim());
         }
     }
-    (InputProvider::None, input.to_string())
+    (InputProvider::None, input)
 }

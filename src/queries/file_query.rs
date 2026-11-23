@@ -63,7 +63,7 @@ fn search_location(
     max_results: usize,
 ) -> bool {
     // println!("\nSearching: {}", location.display());
-    let _ = io::stdout().flush();
+    // let _ = io::stdout().flush();
 
     let mut builder = SearchBuilder::default()
         .location(location)
@@ -75,7 +75,7 @@ fn search_location(
         builder = builder.depth(depth);
     }
 
-    // Include hidden files and directories when requested
+    // Include hidden files and directories if need to
     if include_hidden {
         builder = builder.hidden();
     }
@@ -92,6 +92,7 @@ fn search_location(
 
         *total_results += 1;
 
+        // Display result
         println!("{total_results}. {path}");
 
         // Flush output to immediately display result
