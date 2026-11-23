@@ -1,14 +1,6 @@
 // Simple calculator implementation
 pub fn calculator_query(input: &str) -> Option<f32> {
-    let Ok(postfix) = tokenize(input).and_then(infix_to_postfix)
-    else {
-        return None
-    };
-    // println!("Postfix: {}", postfix.join(" "));
-
-    let result = evaluate_postfix(postfix)?;
-    // println!("Result: {result}");
-    Some(result)
+    Some(evaluate_postfix(tokenize(input).and_then(infix_to_postfix).ok()?)?)
 }
 
 // Convert input string into tokens of digits and operators
